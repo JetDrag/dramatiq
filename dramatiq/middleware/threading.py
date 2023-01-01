@@ -17,12 +17,13 @@
 
 import ctypes
 import inspect
+import os
 import platform
+import signal
 
 from ..logging import get_logger
 
 __all__ = ["Interrupt", "raise_thread_exception"]
-
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,32 @@ def is_gevent_active():
     except ImportError:  # pragma: no cover
         return False
     return bool(monkey.saved)
+
+
+system_call_interruptable = False
+system_call_interrupt_signal = os.getenv('dramatiq_system_call_interrupt_signal', 'SIGUSR1')
+
+
+def interrupt_signal_handler(signum, frame):
+    logger.debug('Interrupting system call in worker thread.')
+
+
+def enable_system_call_interruptable_support():
+    """Support to interrupt system call."""
+    global system_call_interruptable
+    if not system_call_interruptable and hasattr(signal, system_call_interrupt_signal):
+        signal.siginterrupt(getattr(signal, system_call_interrupt_signal), True)
+        signal.signal(getattr(signal, system_call_interrupt_signal), interrupt_signal_handler)
+        system_call_interruptable = True
+
+
+def disable_system_call_interruptable_support():
+    """Disable system call interruptable support."""
+    global system_call_interruptable
+    if system_call_interruptable:
+        signal.siginterrupt(getattr(signal, system_call_interrupt_signal), False)
+        signal.signal(getattr(signal, system_call_interrupt_signal), signal.SIG_DFL)
+        system_call_interruptable = False
 
 
 class Interrupt(BaseException):
@@ -63,7 +90,9 @@ def raise_thread_exception(thread_id, exception):
       cancel system calls.
     """
     if current_platform == "CPython":
-        _raise_thread_exception_cpython(thread_id, exception)
+        ret = _raise_thread_exception_cpython(thread_id, exception)
+        if ret == 1:
+            signal.pthread_kill(thread_id, getattr(signal, system_call_interrupt_signal))
     else:
         message = "Setting thread exceptions (%s) is not supported for your current platform (%r)."
         exctype = (exception if inspect.isclass(exception) else type(exception)).__name__

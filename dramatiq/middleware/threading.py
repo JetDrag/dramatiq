@@ -47,11 +47,14 @@ system_call_interrupt_signal = os.getenv('dramatiq_system_call_interrupt_signal'
 
 
 def interrupt_signal_handler(signum, frame):
+    print('Interrupting system call in worker thread.')
     logger.debug('Interrupting system call in worker thread.')
 
 
 def enable_system_call_interruptable_support():
-    """Support to interrupt system call."""
+    """Support to interrupt system call. Use interruptable signal to interrupt system call
+    in thread.
+    """
     global system_call_interruptable
     if not system_call_interruptable and hasattr(signal, system_call_interrupt_signal):
         signal.siginterrupt(getattr(signal, system_call_interrupt_signal), True)
@@ -86,13 +89,16 @@ def raise_thread_exception(thread_id, exception):
     Note:
       This works by setting an async exception in the thread.  This means
       that the exception will only get called the next time that thread
-      acquires the GIL.  Concretely, this means that this middleware can't
-      cancel system calls.
+      acquires the GIL.
+      If system call interruptable support is enabled, the action will cancel system calls.
     """
     if current_platform == "CPython":
         ret = _raise_thread_exception_cpython(thread_id, exception)
-        if ret == 1:
-            signal.pthread_kill(thread_id, getattr(signal, system_call_interrupt_signal))
+        if ret == 1 and system_call_interruptable:
+            try:
+                signal.pthread_kill(thread_id, getattr(signal, system_call_interrupt_signal))
+            except ProcessLookupError:
+                pass
     else:
         message = "Setting thread exceptions (%s) is not supported for your current platform (%r)."
         exctype = (exception if inspect.isclass(exception) else type(exception)).__name__
@@ -109,3 +115,4 @@ def _raise_thread_exception_cpython(thread_id, exception):
     elif count > 1:  # pragma: no cover
         logger.critical("Exception (%s) was set in multiple threads.  Undoing...", exctype)
         ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, ctypes.c_long(0))
+    return count

@@ -467,9 +467,14 @@ def test_rabbitmq_broker_retries_declaring_queues_when_connection_related_errors
 def test_rabbitmq_broker_retries_declaring_queues_when_declared_queue_disappears(rabbitmq_broker):
     executed = False
 
+    import string
+    import random
+    
+    characters = string.ascii_letters + string.digits
+    suffix = "".join(random.choice(characters) for _ in range(2))
+
     # Given that I have an actor on a flaky queue
-    flaky_queue_name = "flaky_queue"
-    rabbitmq_broker.channel.queue_delete(flaky_queue_name)
+    flaky_queue_name = f"flaky_queue_{suffix}"
 
     @dramatiq.actor(queue_name=flaky_queue_name)
     def do_work():

@@ -345,11 +345,11 @@ class RabbitmqBroker(Broker):
                 # next caller/attempt may initiate new ones of each.
                 del self.connection
 
-                # If the queue disappears, remove it from the known set
-                # so that it can be redeclared on retry or the next time
-                # a message is enqueued.
-                if getattr(e, "reply_code", None) == 404:
-                    self.queues.remove(q_name(queue_name))
+                # # If the queue disappears, remove it from the known set
+                # # so that it can be redeclared on retry or the next time
+                # # a message is enqueued.
+                # if getattr(e, "reply_code", None) == 404:
+                #     self.queues.remove(q_name(queue_name))
 
                 attempts += 1
                 if attempts > MAX_ENQUEUE_ATTEMPTS:
